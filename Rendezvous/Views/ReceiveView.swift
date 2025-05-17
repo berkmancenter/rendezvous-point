@@ -29,6 +29,8 @@ struct ReceiveView: View {
     @State private var name: String = ""
     @State private var disclosures: [Disclosure] = []
     @State private var refreshing = false
+    @State private var showOrgPopover = false
+
     @FocusState private var focusState: FocusedField?
     
     enum ErrorSheetState: Equatable {
@@ -86,9 +88,40 @@ struct ReceiveView: View {
                     .foregroundStyle(.red)
                 
             case .inbox:
-                Text("INBOX")
-                    .font(.system(.title, design: .monospaced))
-                    .foregroundStyle(.green)
+                HStack(spacing: 10) {
+                    Text("INBOX")
+                        .font(.system(.title, design: .monospaced))
+                        .foregroundStyle(.green)
+                    
+                    Button(action: {
+                        showOrgPopover.toggle()
+                    }) {
+                        Image(systemName: "lock")
+                            .foregroundStyle(.green)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(
+                        isPresented: $showOrgPopover
+                    ) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("ORG: \(name)")
+                                .font(.system(.headline, design: .monospaced))
+                                .foregroundStyle(.green)
+                            
+                            Text("PUBLIC KEY:")
+                                .font(.system(.headline, design: .monospaced))
+                                .foregroundStyle(.green)
+                            
+                            Text(recipientKey.publicKey.urlSafeBase64EncodedString())
+                                .font(.system(.footnote, design: .monospaced))
+                                .foregroundStyle(.green)
+                        }
+                        .padding()
+                        .preferredColorScheme(.dark)
+                        .presentationCompactAdaptation(.popover)
+                    }
+                    
+                }
                 
                 if disclosures.isEmpty {
                     Spacer()
@@ -105,10 +138,16 @@ struct ReceiveView: View {
                                 let disclosure = disclosures[index]
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(disclosure.author.isEmpty ? "anonymous" : disclosure.author)
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundStyle(.green.opacity(0.8))
-                                    
+                                    HStack(alignment: .top) {
+                                        Text(disclosure.author.isEmpty ? "anonymous" : disclosure.author)
+                                            .font(.system(.footnote, design: .monospaced))
+                                            .foregroundStyle(.green.opacity(0.8))
+                                        
+                                        Text("\(disclosure.organization!) ✔")
+                                            .font(.system(.footnote, design: .monospaced))
+                                            .foregroundStyle(.green.opacity(0.4))
+                                    }
+
                                     Text(disclosure.text)
                                         .font(.system(.body, design: .monospaced))
                                         .foregroundStyle(.green)

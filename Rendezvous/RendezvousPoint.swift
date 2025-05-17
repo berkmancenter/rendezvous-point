@@ -55,9 +55,6 @@ struct RendezvousPoint {
         }.resume()
     }
     
-    private struct ChallengeRequest: Codable {
-        let publicKey: Data
-    }
     private struct ChallengeResponse: Codable {
         let token: Data
         let serverPublicKey: Data
@@ -68,10 +65,7 @@ struct RendezvousPoint {
         using privateKey: Curve25519.KeyAgreement.PrivateKey,
         completion: @escaping (Data?) -> Void
     ) throws {
-        var challengeReq = URLRequest(url: url.appendingPathComponent("inbox/challenge"))
-        challengeReq.httpMethod = "POST"
-        challengeReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        challengeReq.httpBody = try JSONEncoder().encode(ChallengeRequest(publicKey: recipient.publicKey.rawRepresentation))
+        let challengeReq = URLRequest(url: url.appendingPathComponent("inbox/\(recipient.publicKey.urlSafeBase64EncodedString())/challenge"))
         
         DomainFronting.googleFrontedDataTask(with: challengeReq) { data, response, error in
             guard let data = data,
@@ -101,56 +95,38 @@ struct RendezvousPoint {
         }.resume()
     }
     
-    private struct InboxRequest: Codable {
-        let publicKey: Data
-        let encryptedToken: Data
-    }
     private struct InboxResponse: Codable {
         let id: UUID
+        let org: String
         let share: Data
     }
     
     func checkInbox(
         for recipient: Recipient,
         using privateKey: Curve25519.KeyAgreement.PrivateKey,
-        completion: @escaping ([UUID: Disclosure.Share]?) -> Void
+        completion: @escaping ([String: [UUID: Disclosure.Share]]?) -> Void
     ) throws {
         try fetchInboxChallenge(for: recipient, using: privateKey) { encryptedToken in
             guard let encryptedToken = encryptedToken else {
                 return completion(nil)
             }
             
-            do {
-                var inboxReq = URLRequest(url: url.appendingPathComponent("inbox"))
-                inboxReq.httpMethod = "POST"
-                inboxReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            var inboxReq = URLRequest(url: url.appendingPathComponent("inbox/\(recipient.publicKey.urlSafeBase64EncodedString())"))
+            inboxReq.setValue(encryptedToken.base64EncodedString(), forHTTPHeaderField: "Authorization")
+            
+            DomainFronting.googleFrontedDataTask(with: inboxReq) { data, response, error in
+                guard let data = data,
+                      let items = try? JSONDecoder().decode([InboxResponse].self, from: data),
+                      let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+                    completion(nil)
+                    return
+                }
                 
-                let body = try JSONEncoder().encode(InboxRequest(
-                    publicKey: recipient.publicKey.rawRepresentation,
-                    encryptedToken: encryptedToken
-                ))
-                inboxReq.httpBody = body
-                
-                DomainFronting.googleFrontedDataTask(with: inboxReq) { data, response, error in
-                    guard let data = data,
-                          let items = try? JSONDecoder().decode([InboxResponse].self, from: data),
-                          let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-                        completion(nil)
-                        return
-                    }
-                    completion(Dictionary(uniqueKeysWithValues: items.map { ($0.id, Disclosure.Share(data: $0.share)) }))
-                }.resume()
-                
-            } catch {
-                completion(nil)
-            }
+                completion(Dictionary(grouping: items, by: { $0.org }).mapValues { values in
+                    Dictionary(uniqueKeysWithValues: values.map { ($0.id, Disclosure.Share(data: $0.share)) })
+                })
+            }.resume()
         }
-    }
-    
-    private struct InboxDeleteRequest: Codable {
-        let publicKey: Data
-        let encryptedToken: Data
-        let id: UUID
     }
     
     func deleteInboxShare(
@@ -164,28 +140,16 @@ struct RendezvousPoint {
                 return completion(false)
             }
             
-            do {
-                var inboxDeleteReq = URLRequest(url: url.appendingPathComponent("inbox"))
-                inboxDeleteReq.httpMethod = "DELETE"
-                inboxDeleteReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                
-                let body = try JSONEncoder().encode(InboxDeleteRequest(
-                    publicKey: recipient.publicKey.rawRepresentation,
-                    encryptedToken: encryptedToken,
-                    id: disclosureId
-                ))
-                inboxDeleteReq.httpBody = body
-                
-                DomainFronting.googleFrontedDataTask(with: inboxDeleteReq) { data, response, error in
-                    guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-                        return completion(false)
-                    }
-                    completion(true)
-                }.resume()
-                
-            } catch {
-                completion(false)
-            }
+            var inboxDeleteReq = URLRequest(url: url.appendingPathComponent("inbox/\(recipient.publicKey.urlSafeBase64EncodedString())/\(disclosureId.uuidString)"))
+            inboxDeleteReq.httpMethod = "DELETE"
+            inboxDeleteReq.setValue(encryptedToken.base64EncodedString(), forHTTPHeaderField: "Authorization")
+            
+            DomainFronting.googleFrontedDataTask(with: inboxDeleteReq) { data, response, error in
+                guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+                    return completion(false)
+                }
+                completion(true)
+            }.resume()
         }
     }
     
@@ -327,34 +291,39 @@ extension Array where Element == RendezvousPoint {
     ) throws {
         let group = DispatchGroup()
         let syncQueue = DispatchQueue(label: "inbox.sync")
-        var allShares: [UUID: [Disclosure.Share]] = [:]
-
+        var allShares: [String: [UUID: [Disclosure.Share]]] = [:]
+        
         for rp in self {
             group.enter()
             try rp.checkInbox(for: recipient, using: privateKey) { shares in
                 syncQueue.async(execute: DispatchWorkItem(block: {
-                    for (id, share) in shares ?? [:] {
-                        allShares[id, default: []].append(share)
+                    shares?.forEach { org, orgShares in
+                        orgShares.forEach { id, share in
+                            allShares[org, default: [:]][id, default: []].append(share)
+                        }
                     }
                 }))
                 group.leave()
             }
         }
-
+        
         group.notify(queue: .main) {
             var disclosures: [Disclosure] = []
-            for (id, shares) in allShares {
-                guard shares.count >= self.count else { continue }
-                do {
-                    let encrypted = try Disclosure.Encrypted.reconstruct(from: shares)
-                    let disclosure = try encrypted.decrypt(using: privateKey)
-                    disclosures.append(disclosure)
-                    
-                    try deleteDisclosure(disclosureId: id, for: recipient, using: privateKey) { success in
-                        // TODO: error if deletion fails
+            for (org, orgShares) in allShares {
+                for (id, shares) in orgShares {
+                    guard shares.count >= self.count else { continue }
+                    do {
+                        let encrypted = try Disclosure.Encrypted.reconstruct(from: shares)
+                        var disclosure = try encrypted.decrypt(using: privateKey)
+                        disclosure.organization = org
+                        disclosures.append(disclosure)
+                        
+                        try deleteDisclosure(disclosureId: id, for: recipient, using: privateKey) { success in
+                            // TODO: error if deletion fails
+                        }
+                    } catch {
+                        continue
                     }
-                } catch {
-                    continue
                 }
             }
             completion(disclosures)
@@ -386,5 +355,15 @@ extension Array where Element == RendezvousPoint {
         group.notify(queue: .main) {
             completion(overallSuccess)
         }
+    }
+}
+
+extension Curve25519.KeyAgreement.PublicKey {
+    func urlSafeBase64EncodedString() -> String {
+        rawRepresentation
+            .base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
     }
 }

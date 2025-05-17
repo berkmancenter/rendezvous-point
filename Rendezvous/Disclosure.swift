@@ -12,6 +12,7 @@ import SwiftySSS
 struct Disclosure: Codable {
     let text: String
     let author: String
+    var organization: String?
     
     func encrypt(recipient: Recipient) throws -> Encrypted {
         let ephemeralKey = Curve25519.KeyAgreement.PrivateKey()

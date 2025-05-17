@@ -50,6 +50,7 @@ struct TransmitView: View {
     @State private var recipients: [Recipient] = []
     @State private var selectedRecipient: Recipient?
     @State private var isLoadingRecipients = false
+    @State private var showRecipientPopover = false
     
     @State private var fromText: String = "anonymous"
 
@@ -160,9 +161,38 @@ struct TransmitView: View {
                                             }
                                         }
                                     } label: {
-                                        Text("\(selectedRecipient?.name ?? "SELECT") ▼")
-                                            .font(.system(.headline, design: .monospaced))
-                                            .foregroundStyle(.green)
+                                        HStack {
+                                            Text("▼ \(selectedRecipient?.name ?? "SELECT")")
+                                                .font(.system(.headline, design: .monospaced))
+                                                .foregroundStyle(.green)
+                                        }
+                                    }.onTapGesture {
+                                        fetchRecipients()
+                                    }
+                                    if let selectedRecipient = selectedRecipient {
+                                        Button(action: {
+                                            showRecipientPopover.toggle()
+                                        }) {
+                                            Image(systemName: "lock")
+                                                .foregroundStyle(.green)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .popover(
+                                            isPresented: $showRecipientPopover
+                                        ) {
+                                            VStack(alignment: .leading, spacing: 10) {
+                                                Text("PUBLIC KEY:")
+                                                    .font(.system(.headline, design: .monospaced))
+                                                    .foregroundStyle(.green)
+                                                
+                                                Text(selectedRecipient.publicKey.urlSafeBase64EncodedString())
+                                                    .font(.system(.footnote, design: .monospaced))
+                                                    .foregroundStyle(.green)
+                                            }
+                                            .padding()
+                                            .preferredColorScheme(.dark)
+                                            .presentationCompactAdaptation(.popover)
+                                        }
                                     }
                                 }
 
@@ -236,14 +266,17 @@ struct TransmitView: View {
         }
         .onAppear {
             focusState = .disclosure
-            
-            isLoadingRecipients = true
-            RendezvousPoint.all.requestCommonRecipients { recipients in
-                DispatchQueue.main.async {
-                    self.isLoadingRecipients = false
-                    self.recipients = recipients
-                    self.selectedRecipient = recipients.first
-                }
+            fetchRecipients()
+        }
+    }
+    
+    func fetchRecipients() {
+        isLoadingRecipients = true
+        RendezvousPoint.all.requestCommonRecipients { recipients in
+            DispatchQueue.main.async {
+                self.isLoadingRecipients = false
+                self.recipients = recipients
+                self.selectedRecipient = recipients.first
             }
         }
     }

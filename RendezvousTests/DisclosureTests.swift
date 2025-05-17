@@ -13,7 +13,7 @@ final class DisclosureTests: XCTestCase {
     
     func testEncryptionAndDecryptionRoundTrip() throws {
         let message = "The password is swordfish"
-        let disclosure = Disclosure(text: message)
+        let disclosure = Disclosure(text: message, author: "nora")
 
         let recipientKey = Curve25519.KeyAgreement.PrivateKey()
         let recipient = Recipient(name: "test", publicKey: recipientKey.publicKey)
@@ -25,7 +25,7 @@ final class DisclosureTests: XCTestCase {
     }
 
     func testEncryptedCodableRoundTrip() throws {
-        let disclosure = Disclosure(text: "Hello!")
+        let disclosure = Disclosure(text: "Hello!", author: "nora")
         let recipientKey = Curve25519.KeyAgreement.PrivateKey()
         let recipient = Recipient(name: "test", publicKey: recipientKey.publicKey)
 
@@ -40,7 +40,7 @@ final class DisclosureTests: XCTestCase {
 
     func testShareSplitAndReconstruction() throws {
         let message = "Top secret"
-        let disclosure = Disclosure(text: message)
+        let disclosure = Disclosure(text: message, author: "nora")
 
         let recipientKey = Curve25519.KeyAgreement.PrivateKey()
         let recipient = Recipient(name: "test", publicKey: recipientKey.publicKey)
@@ -52,7 +52,7 @@ final class DisclosureTests: XCTestCase {
 
         // Take 3 random shares to reconstruct
         let selectedShares = Array(shares.shuffled().prefix(3))
-        let reconstructed = try Disclosure.Encrypted.reconstruct(from: selectedShares, using: recipientKey)
+        let reconstructed = try Disclosure.Encrypted.reconstruct(from: selectedShares)
 
         let decrypted = try reconstructed.decrypt(using: recipientKey)
         XCTAssertEqual(decrypted.text, message)
@@ -60,7 +60,7 @@ final class DisclosureTests: XCTestCase {
 
     func testShareReconstructionFailsWithTooFewShares() throws {
         let message = "Too few"
-        let disclosure = Disclosure(text: message)
+        let disclosure = Disclosure(text: message, author: "nora")
 
         let recipientKey = Curve25519.KeyAgreement.PrivateKey()
         let recipient = Recipient(name: "test", publicKey: recipientKey.publicKey)
@@ -71,6 +71,6 @@ final class DisclosureTests: XCTestCase {
         // Only use 2 shares (below threshold)
         let fewShares = Array(shares.prefix(2))
 
-        XCTAssertThrowsError(try Disclosure.Encrypted.reconstruct(from: fewShares, using: recipientKey))
+        XCTAssertThrowsError(try Disclosure.Encrypted.reconstruct(from: fewShares))
     }
 }
