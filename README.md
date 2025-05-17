@@ -2,7 +2,7 @@
 
 **⚠️ Proof of Concept – Not for Production Use**
 
-> This is a research prototype. It is **not secure**, **not audited**, and **not intended for real-world whistleblowing**.
+> This is a research prototype. It is **not audited** and **not intended for real-world whistleblowing**.
 
 Rendezvous is a privacy-preserving protocol and prototype for whistleblowing that ensures disclosures are only released when a **safety threshold** is met – meaning enough people from the same organization have independently come forward. It provides anonymity, security, and accountability through:
 
