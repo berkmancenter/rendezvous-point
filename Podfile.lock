@@ -1,0 +1,21 @@
+PODS:
+  - SwiftySSS (0.0.1)
+
+DEPENDENCIES:
+  - SwiftySSS (from `https://github.com/echoprotocol/SwiftySSS.git`)
+
+EXTERNAL SOURCES:
+  SwiftySSS:
+    :git: https://github.com/echoprotocol/SwiftySSS.git
+
+CHECKOUT OPTIONS:
+  SwiftySSS:
+    :commit: eb798e0636c9199aaa2e9a366267285c11375907
+    :git: https://github.com/echoprotocol/SwiftySSS.git
+
+SPEC CHECKSUMS:
+  SwiftySSS: 305df9b779b5a30dce263a11057936696930e6f4
+
+PODFILE CHECKSUM: e6f3bd6f7f536627dfe438c08ca8c43eb73b5f01
+
+COCOAPODS: 1.16.2

@@ -7,7 +7,25 @@
 		<key>Rendezvous.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>0</integer>
+			<integer>4</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>EC4EA0512D946C4200ADE8D0</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>EC4EA0622D946C4400ADE8D0</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>EC4EA06C2D946C4400ADE8D0</key>
+		<dict>
+			<key>primary</key>
+			<true/>
 		</dict>
 	</dict>
 </dict>
