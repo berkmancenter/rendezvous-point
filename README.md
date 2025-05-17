@@ -2,7 +2,7 @@
 
 **⚠️ Proof of Concept – Not for Production Use**
 
-> This is a research prototype. It is **not audited** and **not intended for real-world whistleblowing**.
+> This is a research prototype. It is **not audited** and **not ready for real-world whistleblowing**.
 
 Rendezvous is a privacy-preserving protocol and prototype for whistleblowing that ensures disclosures are only released when a **safety threshold** is met – meaning enough people from the same organization have independently come forward. It provides anonymity, security, and accountability through:
 
@@ -40,7 +40,7 @@ Rendezvous is a privacy-preserving protocol and prototype for whistleblowing tha
 
 ## Client Behavior
 
-The demo [Swift client](Rendezvous) provides:
+The demo [Swift client](ios) provides:
 
 1. **Whistleblower**
    
@@ -114,17 +114,9 @@ Returns a list of registered recipients.
 ]
 ```
 
-### `POST /inbox/challenge`
+### `GET /inbox/:publicKey/challenge`
 
-Requests a challenge token to initiate inbox authentication.
-
-**Body:**
-
-```json
-{
-  "publicKey": "<base64 Curve25519 public key>"
-}
-```
+Requests a challenge token for a given public key initiate inbox authentication.
 
 **Response:**
 
@@ -135,20 +127,11 @@ Requests a challenge token to initiate inbox authentication.
 }
 ```
 
-### `POST /inbox`
+### `GET /inbox/:publicKey`
 
 **Authenticated** with AES-GCM `encryptedToken`.
 
 Returns shares for any organization where a threshold has been met.
-
-**Body:**
-
-```json
-{
-  "publicKey": "<base64 public key>",
-  "encryptedToken": "<AES-GCM ciphertext>"
-}
-```
 
 **Response:**
 
@@ -162,21 +145,11 @@ Returns shares for any organization where a threshold has been met.
 ]
 ```
 
-### `DELETE /inbox`
+### `DELETE /inbox/:publicKey/:id`
 
 **Authenticated** with AES-GCM `encryptedToken`.
 
 Deletes a disclosure share by `id`.
-
-**Body:**
-
-```json
-{
-  "publicKey": "<base64 public key>",
-  "encryptedToken": "<AES-GCM ciphertext>",
-  "id": "UUID"
-}
-```
 
 ## License
 
