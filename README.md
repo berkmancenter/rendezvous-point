@@ -9,6 +9,8 @@ Rendezvous is a privacy-preserving protocol and prototype for whistleblowing tha
 - **Threshold-gated release via distributed crypto**
 - **End-to-end encrypted to your target**
 
+<img src="demo.gif" alt="demo"/>
+
 > This is a research prototype. It is **not secure**, **not audited**, and **not intended for real-world whistleblowing**.
 
 ---
