@@ -33,10 +33,11 @@ Rendezvous is a privacy-preserving protocol and prototype for whistleblowing tha
 2. **Recipient**
 
    * Registers their public key with rendezvous points via `POST /register`.
-   * Requests inbox access via `POST /inbox/challenge` and completes authentication using AES-GCM challenge encryption.
-   * Retrieves shares once the threshold is met with `POST /inbox`.
+   * Requests inbox authentication via `GET /inbox/:publicKey/challenge`.
+   * Proves ownership of private key by encrypting challenge using ephemeral Curve25519 + AES-GCM.
+   * Retrieves shares once the threshold is met with `GET /inbox/:publicKey`.
    * Reconstructs and decrypts the disclosure.
-   * Optionally deletes the received share with `DELETE /inbox`.
+   * Optionally deletes the received share with `DELETE /inbox/:publicKey/:id`.
 
 ## Client Behavior
 
@@ -51,7 +52,7 @@ The demo [Swift client](ios) provides:
 2. **Recipient**
    
    * Key generation and registration
-   * Challenge-response inbox access with key derivation and AES-GCM
+   * Challenge-response inbox access
    * Decryption and automatic deletion of processed disclosures
 
 ## Server API

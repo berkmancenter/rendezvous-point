@@ -21,3 +21,9 @@ type InboxResponse struct {
 	Org   string `json:"org"`
 	Share string `json:"share"`
 }
+
+type Challenge struct {
+	EphemeralPrivateKey []byte
+	EphemeralPublicKey  []byte
+	Token               []byte
+}

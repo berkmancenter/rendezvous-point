@@ -9,24 +9,27 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/curve25519"
 )
 
 func TestVerifyChallenge_Success(t *testing.T) {
-	createKeys()
+	var peerPrivateKey [32]byte
+	cryptoRand.Read(peerPrivateKey[:])
 
-	var peerPubliceKey [32]byte
-	cryptoRand.Read(peerPubliceKey[:])
+	peerPublicKey, err := curve25519.X25519(peerPrivateKey[:], curve25519.Basepoint)
+	assert.NoError(t, err)
+	peerPublicKeyString := base64.RawURLEncoding.EncodeToString(peerPublicKey)
 
-	challenge := newChallenge()
+	challenge, err := newChallenge()
+	assert.NoError(t, err)
 
-	peerPublicKeyStr := base64.RawURLEncoding.EncodeToString(peerPubliceKey[:])
-	challenges[peerPublicKeyStr] = challenge
+	challenges[peerPublicKeyString] = *challenge
 
-	encryptedToken, err := encryptedToken(challenge, privateKey[:], peerPubliceKey[:])
+	encryptedToken, err := encryptedToken(challenge.Token, peerPrivateKey[:], challenge.EphemeralPublicKey[:])
 	assert.NoError(t, err)
 
 	// Test verification
-	err = verifyChallenge(peerPublicKeyStr, *encryptedToken)
+	err = verifyChallenge(peerPublicKeyString, *encryptedToken)
 	assert.NoError(t, err)
 }
 

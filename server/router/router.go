@@ -17,10 +17,6 @@ import (
 func RegisterRoutes(e *echo.Echo) {
 	createKeys()
 
-	e.GET("/", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]interface{}{"publicKey": publicKeyString})
-	})
-
 	e.GET("/credential", getCredential)
 	e.POST("/disclose", postDisclose, middleware.BodyLimit("2K"), echojwt.WithConfig(echojwt.Config{
 		SigningKey:    &signingKey.PublicKey,
@@ -91,15 +87,18 @@ func getRecipients(c echo.Context) error {
 
 func getInboxChallenge(c echo.Context) error {
 	key := c.Param("key")
-	challenge := newChallenge()
+	challenge, err := newChallenge()
+	if err != nil {
+		return c.String(http.StatusInternalServerError, "failed to generate challenge")
+	}
 
 	challengesMu.Lock()
 	defer challengesMu.Unlock()
-	challenges[key] = challenge
+	challenges[key] = *challenge
 
 	return c.JSON(http.StatusOK, types.InboxChallengeResponse{
-		Token:           base64.StdEncoding.EncodeToString(challenge),
-		ServerPublicKey: *publicKeyString,
+		Token:           base64.StdEncoding.EncodeToString(challenge.Token),
+		ServerPublicKey: base64.StdEncoding.EncodeToString(challenge.EphemeralPublicKey),
 	})
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/berkmancenter/rendezvous-point/types"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/curve25519"
 )
 
 func setupTestRouter() *echo.Echo {
@@ -21,65 +22,6 @@ func setupTestRouter() *echo.Echo {
 	RegisterRoutes(e)
 	return e
 }
-
-// func TestRegisterAndGetRecipients(t *testing.T) {
-// 	e := setupTestRouter()
-
-// 	recipient := types.Recipient{
-// 		Name:      "Alice",
-// 		PublicKey: base64.StdEncoding.EncodeToString([]byte("test-key")),
-// 	}
-// 	body, _ := json.Marshal(recipient)
-// 	req := httptest.NewRequest(http.MethodPost, "/register", bytes.NewReader(body))
-// 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-// 	rec := httptest.NewRecorder()
-// 	c := e.NewContext(req, rec)
-
-// 	err := postRegister(c)
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, http.StatusOK, rec.Code)
-// 	assert.Equal(t, "ok", rec.Body.String())
-
-// 	// Get recipients
-// 	req = httptest.NewRequest(http.MethodGet, "/recipients", nil)
-// 	rec = httptest.NewRecorder()
-// 	c = e.NewContext(req, rec)
-// 	err = getRecipients(c)
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, http.StatusOK, rec.Code)
-// 	assert.Contains(t, rec.Body.String(), "Alice")
-// }
-
-// func TestInboxChallenge(t *testing.T) {
-// 	e := setupTestRouter()
-
-// 	key := base64.RawURLEncoding.EncodeToString([]byte("recipient-key"))
-// 	req := httptest.NewRequest(http.MethodGet, "/inbox/"+key+"/challenge", nil)
-// 	rec := httptest.NewRecorder()
-// 	c := e.NewContext(req, rec)
-// 	c.SetParamNames("key")
-// 	c.SetParamValues(key)
-
-// 	err := getInboxChallenge(c)
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, http.StatusOK, rec.Code)
-// 	assert.Contains(t, rec.Body.String(), "token")
-// }
-
-// func TestDeleteInboxId_InvalidKey(t *testing.T) {
-// 	e := setupTestRouter()
-
-// 	req := httptest.NewRequest(http.MethodDelete, "/inbox/invalid-base64/id123", nil)
-// 	rec := httptest.NewRecorder()
-// 	c := e.NewContext(req, rec)
-// 	c.SetParamNames("key", "id")
-// 	c.SetParamValues("invalid-base64", "id123")
-
-// 	err := deleteInboxId(c)
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-// 	assert.Contains(t, rec.Body.String(), "invalid key encoding")
-// }
 
 func TestRegisterAndListRecipients(t *testing.T) {
 	e := setupTestRouter()
@@ -118,9 +60,12 @@ func TestCredentialIssue(t *testing.T) {
 func TestInboxChallengeAndAccessFlow(t *testing.T) {
 	e := setupTestRouter()
 
-	var peerPublicKey [32]byte
-	cryptoRand.Read(peerPublicKey[:])
-	peerPublicKeyString := base64.RawURLEncoding.EncodeToString(peerPublicKey[:])
+	var peerPrivateKey [32]byte
+	cryptoRand.Read(peerPrivateKey[:])
+
+	peerPublicKey, err := curve25519.X25519(peerPrivateKey[:], curve25519.Basepoint)
+	assert.NoError(t, err)
+	peerPublicKeyString := base64.RawURLEncoding.EncodeToString(peerPublicKey)
 
 	// Step 1: Request a challenge
 	rec := httptest.NewRecorder()
@@ -131,7 +76,10 @@ func TestInboxChallengeAndAccessFlow(t *testing.T) {
 
 	var resp types.InboxChallengeResponse
 	json.Unmarshal(rec.Body.Bytes(), &resp)
-	challenge, _ := base64.StdEncoding.DecodeString(resp.Token)
+	token, err := base64.StdEncoding.DecodeString(resp.Token)
+	assert.NoError(t, err)
+	serverPublicKey, err := base64.StdEncoding.DecodeString(resp.ServerPublicKey)
+	assert.NoError(t, err)
 
 	// Step 2: Simulate disclosure submissions from 3 orgs
 	orgs := []string{"OrgA", "OrgB", "OrgC"}
@@ -150,7 +98,7 @@ func TestInboxChallengeAndAccessFlow(t *testing.T) {
 	}
 
 	// Step 3: Encrypt token with shared key
-	encryptedToken, err := encryptedToken(challenge, privateKey[:], peerPublicKey[:])
+	encryptedToken, err := encryptedToken(token, peerPrivateKey[:], serverPublicKey[:])
 	assert.NoError(t, err)
 
 	// Step 4: Access inbox
@@ -168,27 +116,44 @@ func TestInboxChallengeAndAccessFlow(t *testing.T) {
 func TestInboxDelete(t *testing.T) {
 	e := setupTestRouter()
 
-	var peerPublicKey [32]byte
-	cryptoRand.Read(peerPublicKey[:])
-	peerPublicKeyString := base64.RawURLEncoding.EncodeToString(peerPublicKey[:])
+	var peerPrivateKey [32]byte
+	cryptoRand.Read(peerPrivateKey[:])
+
+	peerPublicKey, err := curve25519.X25519(peerPrivateKey[:], curve25519.Basepoint)
+	assert.NoError(t, err)
+	peerPublicKeyString := base64.RawURLEncoding.EncodeToString(peerPublicKey)
 
 	shareID := "share-id"
-	challenge := []byte("test-challenge")
-	challenges[peerPublicKeyString] = challenge
 
-	// Create share
+	// Step 1: Request a challenge
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/inbox/"+peerPublicKeyString+"/challenge", nil)
+
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var resp types.InboxChallengeResponse
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	token, err := base64.StdEncoding.DecodeString(resp.Token)
+	assert.NoError(t, err)
+	serverPublicKey, err := base64.StdEncoding.DecodeString(resp.ServerPublicKey)
+	assert.NoError(t, err)
+
+	// Step 2: Simulate a share
 	org := "TestOrg"
 	disclosures[string(peerPublicKey[:])] = map[string]map[string]string{
 		org: {shareID: "share-value"},
 	}
 
-	// Encrypt challenge token
-	encryptedToken, err := encryptedToken(challenge, privateKey[:], peerPublicKey[:])
+	// Step 3: Encrypt token with shared key
+	privateKey := make([]byte, 32)
+	cryptoRand.Read(privateKey)
+	encryptedToken, err := encryptedToken(token, peerPrivateKey[:], serverPublicKey[:])
 	assert.NoError(t, err)
 
 	// Build delete request
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/inbox/"+peerPublicKeyString+"/"+shareID, nil)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/inbox/"+peerPublicKeyString+"/"+shareID, nil)
 	req.Header.Set("Authorization", *encryptedToken)
 	e.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)

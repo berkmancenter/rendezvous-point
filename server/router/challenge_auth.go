@@ -3,13 +3,13 @@ package router
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	cryptoRand "crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/http"
 
+	"github.com/berkmancenter/rendezvous-point/types"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
@@ -27,10 +27,23 @@ func challengeAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func newChallenge() []byte {
-	challenge := make([]byte, 32)
-	cryptoRand.Read(challenge)
-	return challenge
+func newChallenge() (*types.Challenge, error) {
+	token := make([]byte, 32)
+	cryptoRand.Read(token)
+
+	ephemeralPrivateKey := make([]byte, 32)
+	cryptoRand.Read(ephemeralPrivateKey)
+
+	ephemeralPublicKey, err := curve25519.X25519(ephemeralPrivateKey[:], curve25519.Basepoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute ephemeral public key")
+	}
+
+	return &types.Challenge{
+		Token:               token,
+		EphemeralPrivateKey: ephemeralPrivateKey,
+		EphemeralPublicKey:  ephemeralPublicKey,
+	}, nil
 }
 
 func verifyChallenge(publicKey string, encryptedToken string) error {
@@ -47,15 +60,19 @@ func verifyChallenge(publicKey string, encryptedToken string) error {
 	if err != nil {
 		return fmt.Errorf("invalid public key")
 	}
-	decrypted, err := aesGCMOpen(encryptedTokenBytes, peerKeyBytes)
-	if err != nil || string(decrypted) != string(challenge) {
+	decrypted, err := aesGCMOpen(encryptedTokenBytes, peerKeyBytes, challenge.EphemeralPrivateKey)
+	if err != nil || string(decrypted) != string(challenge.Token) {
 		return fmt.Errorf("challenge failed")
 	}
+
+	challengesMu.Lock()
+	delete(challenges, publicKey)
+	defer challengesMu.Unlock()
 
 	return nil
 }
 
-func aesGCMOpen(ciphertext []byte, peerPublicKeyBytes []byte) ([]byte, error) {
+func aesGCMOpen(ciphertext []byte, peerPublicKeyBytes []byte, privateKey []byte) ([]byte, error) {
 	if len(peerPublicKeyBytes) != 32 {
 		return nil, fmt.Errorf("invalid X25519 public key length")
 	}
@@ -95,8 +112,8 @@ func aesGCMOpen(ciphertext []byte, peerPublicKeyBytes []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func encryptedToken(challenge []byte, serverPrivateKey []byte, clientPublicKey []byte) (*string, error) {
-	sharedSecret, err := curve25519.X25519(privateKey[:], clientPublicKey[:])
+func encryptedToken(challenge []byte, clientPrivateKey []byte, ephemeralPublicKey []byte) (*string, error) {
+	sharedSecret, err := curve25519.X25519(clientPrivateKey[:], ephemeralPublicKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +137,7 @@ func encryptedToken(challenge []byte, serverPrivateKey []byte, clientPublicKey [
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	_, err = rand.Read(nonce)
+	_, err = cryptoRand.Read(nonce)
 	if err != nil {
 		return nil, err
 	}
