@@ -76,8 +76,8 @@ func postRegister(c echo.Context) error {
 }
 
 func getRecipients(c echo.Context) error {
-	recipientsMu.Lock()
-	defer recipientsMu.Unlock()
+	recipientsMu.RLock()
+	defer recipientsMu.RUnlock()
 	var result []types.Recipient
 	for key, name := range recipients {
 		result = append(result, types.Recipient{Name: name, PublicKey: key})
@@ -92,13 +92,19 @@ func getInboxChallenge(c echo.Context) error {
 		return c.String(http.StatusInternalServerError, "failed to generate challenge")
 	}
 
+	encodedNonce := base64.StdEncoding.EncodeToString(challenge.Nonce)
+
 	challengesMu.Lock()
 	defer challengesMu.Unlock()
-	challenges[key] = *challenge
+	if challenges[key] == nil {
+		challenges[key] = make(map[string]types.Challenge)
+	}
+	challenges[key][encodedNonce] = *challenge
 
 	return c.JSON(http.StatusOK, types.InboxChallengeResponse{
-		Token:           base64.StdEncoding.EncodeToString(challenge.Token),
-		ServerPublicKey: base64.StdEncoding.EncodeToString(challenge.EphemeralPublicKey),
+		Token:     base64.StdEncoding.EncodeToString(challenge.Token),
+		PublicKey: base64.StdEncoding.EncodeToString(challenge.EphemeralPublicKey),
+		Nonce:     encodedNonce,
 	})
 }
 
@@ -108,6 +114,9 @@ func getInbox(c echo.Context) error {
 	if err != nil {
 		return c.String(http.StatusBadRequest, "invalid key encoding")
 	}
+
+	disclosuresMu.RLock()
+	defer disclosuresMu.RUnlock()
 
 	entries := disclosures[string(key)]
 	var result []types.InboxResponse

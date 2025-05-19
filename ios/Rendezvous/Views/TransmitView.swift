@@ -16,7 +16,7 @@ struct TransmitView: View {
         self.credentials = credentials
         self.onAbort = onAbort
     }
-    
+
     enum FocusedField {
         case disclosure
     }

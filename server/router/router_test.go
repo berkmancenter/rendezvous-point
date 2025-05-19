@@ -78,7 +78,7 @@ func TestInboxChallengeAndAccessFlow(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	token, err := base64.StdEncoding.DecodeString(resp.Token)
 	assert.NoError(t, err)
-	serverPublicKey, err := base64.StdEncoding.DecodeString(resp.ServerPublicKey)
+	serverPublicKey, err := base64.StdEncoding.DecodeString(resp.PublicKey)
 	assert.NoError(t, err)
 
 	// Step 2: Simulate disclosure submissions from 3 orgs
@@ -104,7 +104,8 @@ func TestInboxChallengeAndAccessFlow(t *testing.T) {
 	// Step 4: Access inbox
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/inbox/"+peerPublicKeyString, nil)
-	req.Header.Set("Authorization", *encryptedToken)
+	jsonPayload := fmt.Sprintf(`{"nonce":"%s","encryptedToken":"%s"}`, resp.Nonce, *encryptedToken)
+	req.Header.Set("Authorization", "Bearer "+base64.StdEncoding.EncodeToString([]byte(jsonPayload)))
 	e.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 
@@ -136,7 +137,7 @@ func TestInboxDelete(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &resp)
 	token, err := base64.StdEncoding.DecodeString(resp.Token)
 	assert.NoError(t, err)
-	serverPublicKey, err := base64.StdEncoding.DecodeString(resp.ServerPublicKey)
+	serverPublicKey, err := base64.StdEncoding.DecodeString(resp.PublicKey)
 	assert.NoError(t, err)
 
 	// Step 2: Simulate a share
@@ -154,7 +155,8 @@ func TestInboxDelete(t *testing.T) {
 	// Build delete request
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/inbox/"+peerPublicKeyString+"/"+shareID, nil)
-	req.Header.Set("Authorization", *encryptedToken)
+	jsonPayload := fmt.Sprintf(`{"nonce":"%s","encryptedToken":"%s"}`, resp.Nonce, *encryptedToken)
+	req.Header.Set("Authorization", "Bearer "+base64.StdEncoding.EncodeToString([]byte(jsonPayload)))
 	e.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 

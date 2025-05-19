@@ -6,8 +6,10 @@ import (
 	cryptoRand "crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/berkmancenter/rendezvous-point/types"
 	"github.com/labstack/echo/v4"
@@ -17,12 +19,27 @@ import (
 
 func challengeAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		key := c.Param("key")
-		encryptedToken := c.Request().Header.Get("Authorization")
-		err := verifyChallenge(key, encryptedToken)
+		authHeader := c.Request().Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid auth scheme")
+		}
+
+		b64 := strings.TrimPrefix(authHeader, "Bearer ")
+		payload, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid base64")
+		}
+
+		var auth types.ChallengeAuth
+		if err := json.Unmarshal(payload, &auth); err != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid json")
+		}
+
+		err = verifyChallenge(c.Param("key"), auth.EncryptedToken, auth.Nonce)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusUnauthorized, err)
 		}
+
 		return next(c)
 	}
 }
@@ -30,6 +47,9 @@ func challengeAuth(next echo.HandlerFunc) echo.HandlerFunc {
 func newChallenge() (*types.Challenge, error) {
 	token := make([]byte, 32)
 	cryptoRand.Read(token)
+
+	nonce := make([]byte, 32)
+	cryptoRand.Read(nonce)
 
 	ephemeralPrivateKey := make([]byte, 32)
 	cryptoRand.Read(ephemeralPrivateKey)
@@ -43,31 +63,44 @@ func newChallenge() (*types.Challenge, error) {
 		Token:               token,
 		EphemeralPrivateKey: ephemeralPrivateKey,
 		EphemeralPublicKey:  ephemeralPublicKey,
+		Nonce:               nonce,
 	}, nil
 }
 
-func verifyChallenge(publicKey string, encryptedToken string) error {
-	challenge, ok := challenges[publicKey]
+func verifyChallenge(publicKey string, encryptedToken string, nonce string) error {
+	challengesMu.Lock()
+	defer challengesMu.Unlock()
+
+	recipientChallenges, ok := challenges[publicKey]
 	if !ok {
-		return fmt.Errorf("no challenge")
+		return fmt.Errorf("no challenges for public key")
 	}
+
+	challenge, ok := recipientChallenges[nonce]
+	if !ok {
+		return fmt.Errorf("no challenge for nonce")
+	}
+
 	encryptedTokenBytes, err := base64.StdEncoding.DecodeString(encryptedToken)
 	if err != nil {
 		return fmt.Errorf("invalid base64")
 	}
-	// Try to decrypt the token
+
 	peerKeyBytes, err := base64.RawURLEncoding.DecodeString(publicKey)
 	if err != nil {
 		return fmt.Errorf("invalid public key")
 	}
+
 	decrypted, err := aesGCMOpen(encryptedTokenBytes, peerKeyBytes, challenge.EphemeralPrivateKey)
 	if err != nil || string(decrypted) != string(challenge.Token) {
 		return fmt.Errorf("challenge failed")
 	}
 
-	challengesMu.Lock()
-	delete(challenges, publicKey)
-	defer challengesMu.Unlock()
+	delete(recipientChallenges, nonce)
+
+	if len(recipientChallenges) == 0 {
+		delete(challenges, publicKey)
+	}
 
 	return nil
 }

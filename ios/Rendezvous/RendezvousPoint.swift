@@ -57,13 +57,19 @@ struct RendezvousPoint {
     
     private struct ChallengeResponse: Codable {
         let token: Data
-        let serverPublicKey: Data
+        let nonce: Data
+        let publicKey: Data
+    }
+
+    private struct ChallengeAuth: Codable {
+        let encryptedToken: Data
+        let nonce: Data
     }
     
     private func fetchInboxChallenge(
         for recipient: Recipient,
         using privateKey: Curve25519.KeyAgreement.PrivateKey,
-        completion: @escaping (Data?) -> Void
+        completion: @escaping (String?) -> Void
     ) throws {
         let challengeReq = URLRequest(url: url.appendingPathComponent("inbox/\(recipient.publicKey.urlSafeBase64EncodedString())/challenge"))
         
@@ -78,7 +84,7 @@ struct RendezvousPoint {
             
             do {
                 let serverPubKey = try Curve25519.KeyAgreement.PublicKey(
-                    rawRepresentation: challengeResponse.serverPublicKey
+                    rawRepresentation: challengeResponse.publicKey
                 )
                 let sharedSecret = try privateKey.sharedSecretFromKeyAgreement(with: serverPubKey)
                 let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
@@ -88,7 +94,15 @@ struct RendezvousPoint {
                     outputByteCount: 32
                 )
                 
-                completion(try AES.GCM.seal(challengeResponse.token, using: symmetricKey).combined!)
+                let auth = ChallengeAuth(
+                    encryptedToken: try AES.GCM.seal(challengeResponse.token, using: symmetricKey).combined!,
+                    nonce: challengeResponse.nonce
+                )
+
+                let encodedAuth = try JSONEncoder().encode(auth)
+                let authString = "Bearer \(encodedAuth.base64EncodedString())"
+
+                completion(authString)
             } catch {
                 completion(nil)
             }
@@ -106,13 +120,13 @@ struct RendezvousPoint {
         using privateKey: Curve25519.KeyAgreement.PrivateKey,
         completion: @escaping ([String: [UUID: Disclosure.Share]]?) -> Void
     ) throws {
-        try fetchInboxChallenge(for: recipient, using: privateKey) { encryptedToken in
-            guard let encryptedToken = encryptedToken else {
+        try fetchInboxChallenge(for: recipient, using: privateKey) { authToken in
+            guard let authToken = authToken else {
                 return completion(nil)
             }
             
             var inboxReq = URLRequest(url: url.appendingPathComponent("inbox/\(recipient.publicKey.urlSafeBase64EncodedString())"))
-            inboxReq.setValue(encryptedToken.base64EncodedString(), forHTTPHeaderField: "Authorization")
+            inboxReq.setValue(authToken, forHTTPHeaderField: "Authorization")
             
             DomainFronting.googleFrontedDataTask(with: inboxReq) { data, response, error in
                 guard let data = data,
@@ -135,14 +149,14 @@ struct RendezvousPoint {
         using privateKey: Curve25519.KeyAgreement.PrivateKey,
         completion: @escaping (Bool) -> Void
     ) throws {
-        try fetchInboxChallenge(for: recipient, using: privateKey) { encryptedToken in
-            guard let encryptedToken = encryptedToken else {
+        try fetchInboxChallenge(for: recipient, using: privateKey) { authToken in
+            guard let authToken = authToken else {
                 return completion(false)
             }
             
             var inboxDeleteReq = URLRequest(url: url.appendingPathComponent("inbox/\(recipient.publicKey.urlSafeBase64EncodedString())/\(disclosureId.uuidString)"))
             inboxDeleteReq.httpMethod = "DELETE"
-            inboxDeleteReq.setValue(encryptedToken.base64EncodedString(), forHTTPHeaderField: "Authorization")
+            inboxDeleteReq.setValue(authToken, forHTTPHeaderField: "Authorization")
             
             DomainFronting.googleFrontedDataTask(with: inboxDeleteReq) { data, response, error in
                 guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {

@@ -14,11 +14,11 @@ import (
 // TODO: don't store in memory
 var (
 	signingKey    *ecdsa.PrivateKey
-	recipientsMu  sync.Mutex
+	recipientsMu  sync.RWMutex
 	recipients    = map[string]string{} // publicKeyBase64 -> name
 	challengesMu  sync.Mutex
-	challenges    = map[string]types.Challenge{} // publicKeyBase64 -> Challenge
-	disclosuresMu sync.Mutex
+	challenges    = map[string]map[string]types.Challenge{} // publicKeyBase64 -> nonce -> Challenge
+	disclosuresMu sync.RWMutex
 	disclosures   = map[string]map[string]map[string]string{} // publicKeyBase64 -> org -> disclosureID -> share
 	threshold     = 3
 )

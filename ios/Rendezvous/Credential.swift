@@ -60,7 +60,7 @@ extension Array where Element == Credential {
         let group = DispatchGroup()
         let syncQueue = DispatchQueue(label: "disclose.sync")
         var success = true
-        
+
         let encrypted = try disclosure.encrypt(recipient: recipient)
         // TODO: support M-of-N threshold sharing
         let shares = try encrypted.makeShares(count, recoveryThreshold: count)

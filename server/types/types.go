@@ -12,8 +12,9 @@ type DisclosureRequest struct {
 }
 
 type InboxChallengeResponse struct {
-	Token           string `json:"token"`
-	ServerPublicKey string `json:"serverPublicKey"`
+	Token     string `json:"token"`
+	PublicKey string `json:"publicKey"`
+	Nonce     string `json:"nonce"`
 }
 
 type InboxResponse struct {
@@ -26,4 +27,10 @@ type Challenge struct {
 	EphemeralPrivateKey []byte
 	EphemeralPublicKey  []byte
 	Token               []byte
+	Nonce               []byte
+}
+
+type ChallengeAuth struct {
+	Nonce          string `json:"nonce"`
+	EncryptedToken string `json:"encryptedToken"`
 }

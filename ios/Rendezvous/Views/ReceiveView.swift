@@ -19,7 +19,7 @@ struct ReceiveView: View {
         case register
         case inbox
     }
-    
+
     enum FocusedField {
         case name
     }
