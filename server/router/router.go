@@ -55,12 +55,12 @@ func postDisclose(c echo.Context) error {
 	disclosuresMu.Lock()
 	defer disclosuresMu.Unlock()
 	if disclosures[string(key)] == nil {
-		disclosures[string(key)] = make(map[string]map[string]string)
+		disclosures[string(key)] = make(map[string]map[string]types.VerifiableShare)
 	}
 	if disclosures[string(key)][org] == nil {
-		disclosures[string(key)][org] = make(map[string]string)
+		disclosures[string(key)][org] = make(map[string]types.VerifiableShare)
 	}
-	disclosures[string(key)][org][req.ID] = req.Share
+	disclosures[string(key)][org][req.ID] = req.VerifiableShare
 	return c.String(http.StatusOK, "transmission successful")
 }
 
@@ -124,9 +124,9 @@ func getInbox(c echo.Context) error {
 		if len(values) >= threshold {
 			for id, share := range values {
 				result = append(result, types.InboxResponse{
-					ID:    id,
-					Org:   org,
-					Share: share,
+					ID:              id,
+					Org:             org,
+					VerifiableShare: share,
 				})
 			}
 		}

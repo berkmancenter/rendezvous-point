@@ -61,19 +61,20 @@ extension Array where Element == Credential {
         let syncQueue = DispatchQueue(label: "disclose.sync")
         var success = true
 
-        let encrypted = try disclosure.encrypt(recipient: recipient)
-        // TODO: support M-of-N threshold sharing
-        let shares = try encrypted.makeShares(count, recoveryThreshold: count)
-        let disclosureId = UUID()
+        let verifiableShares = try disclosure.encryptedVerifiableShares(
+            recipient: recipient,
+            numberOfShares: count,
+            recoveryThreshold: RendezvousPoint.recoveryThreshold
+        )
         
-        for (credential, share) in zip(self, shares) {
+        for (credential, verifiableShare) in zip(self, verifiableShares) {
             group.enter()
             do {
                 try credential.issuer.submitDisclosure(
                     credential: credential,
                     recipient: recipient,
-                    disclosureId: disclosureId,
-                    share: share
+                    disclosureId: disclosure.id,
+                    verifiableShare: verifiableShare
                 ) { _, response, error in
                     if let http = response as? HTTPURLResponse, http.statusCode != 200 || error != nil {
                         syncQueue.async { success = false }

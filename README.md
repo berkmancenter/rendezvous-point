@@ -2,8 +2,6 @@
 
 **⚠️ Proof of Concept – Not for Production Use**
 
-> This is a research prototype. It is **not audited** and **not ready for real-world whistleblowing**.
-
 Rendezvous is a privacy-preserving protocol and prototype for whistleblowing that ensures disclosures are only released when a **safety threshold** is met – meaning enough people from the same organization have independently come forward. It provides anonymity, security, and accountability through:
 
 - **IP-based organization verification**
@@ -17,7 +15,7 @@ Rendezvous is a privacy-preserving protocol and prototype for whistleblowing tha
 
 ### Roles
 
-* **Whistleblower**: Submits sensitive information encrypted and split across servers.
+* **Whistleblower**: Submits disclosures encrypted under recipient keys and verifiably split across servers.
 * **Recipient**: Registered endpoint authorized to retrieve disclosures.
 * **Rendezvous Point**: Independently operated server that holds encrypted disclosure shares and releases them when a threshold is met.
 
@@ -26,18 +24,31 @@ Rendezvous is a privacy-preserving protocol and prototype for whistleblowing tha
 1. **Whistleblower**
 
    * Fetches a JWT credential from each rendezvous point via `GET /credential`.
-   * Encrypts their disclosure using ephemeral Curve25519 + AES-GCM.
-   * Splits the encrypted blob into secret shares using [Shamir Secret Sharing](https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing).
-   * Submits one share to each rendezvous point using `POST /disclose`.
+   * Encrypts their disclosure using ephemeral Curve25519 + AES-GCM derived from the recipient's public key.
+   * Splits the encrypted disclosure using [Shamir Secret Sharing](https://en.wikipedia.org/wiki/Shamir%27s_Secret_Sharing).
+   * For each share, computes a per-recipient commitment: `H(sharedKey || share || disclosureID)`
+   * Submits one share, its commitment, and the ephemeral key to each rendezvous point using `POST /disclose`.
 
 2. **Recipient**
 
    * Registers their public key with rendezvous points via `POST /register`.
    * Requests inbox authentication via `GET /inbox/:publicKey/challenge`.
-   * Proves ownership of private key by encrypting challenge using ephemeral Curve25519 + AES-GCM.
+   * Receives a random challenge + server ephemeral key.
+   * Performs X25519 key agreement and returns the AES-GCM encrypted challenge.
    * Retrieves shares once the threshold is met with `GET /inbox/:publicKey`.
+   * Verifies each share against its commitment using the ephemeral key and reconstructed shared secret, rejecting any unverifiable shares.
    * Reconstructs and decrypts the disclosure.
    * Optionally deletes the received share with `DELETE /inbox/:publicKey/:id`.
+
+### Security Properties
+
+The Rendezvous protocol provides the following properties under standard assumptions:
+
+- **Forward Secrecy**: Each disclosure is encrypted with a new ephemeral key, so past disclosures remain secure even if the client key is compromised later.
+- **Anonymity**: Whistleblowers use only ephemeral keys and never register or reuse long-lived identifiers. Domain fronting and minimal metadata further obscure origin.
+- **Threshold Privacy**: No single server can reconstruct an encrypted disclosure or unilaterally determine an organization. Both disclosure recovery and IP-based organization verification require cooperation from a threshold of independent servers.
+- **Verifiable Shares**: Each share is individually verifiable by the recipient using a keyed commitment, preventing forgery or tampering by malicious servers.
+- **End-to-end Encryption**: Disclosures are encrypted directly to the recipient’s registered public key, and only the holder of the corresponding private key can decrypt them.
 
 ## Client Behavior
 
@@ -82,7 +93,11 @@ Issues a JWT credential tied to the requestor’s IP and organization (via RDAP)
 {
   "id": "UUID",
   "recipient": "<base64 Curve25519 public key>",
-  "share": "<base64 secret share>"
+  "verifiableShare": {
+    "ephemeralKey": "<base64 Curve25519 ephemeral public key>",
+    "data": "<base64 secret share>",
+    "commitment": "<base64 SHA256(sharedKey || share || id)>"
+  }
 }
 ```
 
@@ -124,13 +139,14 @@ Requests a challenge token for a given public key initiate inbox authentication.
 ```json
 {
   "token": "<base64 random challenge>",
-  "serverPublicKey": "<base64 server key>"
+  "publicKey": "<base64 server ephemeral key>",
+  "nonce": "<base64 server random nonce>",
 }
 ```
 
 ### `GET /inbox/:publicKey`
 
-**Authenticated** with AES-GCM `encryptedToken`.
+**Authenticated** with AES-GCM `encryptedToken` and `nonce`.
 
 Returns shares for any organization where a threshold has been met.
 
@@ -141,14 +157,18 @@ Returns shares for any organization where a threshold has been met.
   {
     "id": "UUID",
     "org": "Harvard University",
-    "share": "<base64 secret share>"
+    "verifiableShare": {
+      "ephemeralKey": "<base64 Curve25519 ephemeral public key>",
+      "data": "<base64 secret share>",
+      "commitment": "<base64 SHA256(sharedKey || share || id)>"
+    }
   }
 ]
 ```
 
 ### `DELETE /inbox/:publicKey/:id`
 
-**Authenticated** with AES-GCM `encryptedToken`.
+**Authenticated** with AES-GCM `encryptedToken` and `nonce`.
 
 Deletes a disclosure share by `id`.
 

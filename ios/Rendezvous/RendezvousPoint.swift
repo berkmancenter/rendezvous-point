@@ -11,12 +11,14 @@ import CryptoKit
 struct RendezvousPoint {
     let url: URL
     
-    static var all = [
+    static let all = [
         RendezvousPoint(url: URL(string: "https://rp1-246724171794.us-central1.run.app")!),
         RendezvousPoint(url: URL(string: "https://rp2-246724171794.us-central1.run.app")!),
         RendezvousPoint(url: URL(string: "https://rp3-246724171794.us-central1.run.app")!),
     ]
-    
+
+    static let recoveryThreshold = ((2 * all.count) + 2) / 3 // at least 2/3rd of RPs, rounded up
+
     private struct CredentialResponse: Decodable {
         let credential: String
         let organization: String
@@ -112,13 +114,13 @@ struct RendezvousPoint {
     private struct InboxResponse: Codable {
         let id: UUID
         let org: String
-        let share: Data
+        let verifiableShare: Disclosure.VerifiableShare
     }
     
     func checkInbox(
         for recipient: Recipient,
         using privateKey: Curve25519.KeyAgreement.PrivateKey,
-        completion: @escaping ([String: [UUID: Disclosure.Share]]?) -> Void
+        completion: @escaping ([String: [UUID: Disclosure.VerifiableShare]]?) -> Void
     ) throws {
         try fetchInboxChallenge(for: recipient, using: privateKey) { authToken in
             guard let authToken = authToken else {
@@ -137,7 +139,11 @@ struct RendezvousPoint {
                 }
                 
                 completion(Dictionary(grouping: items, by: { $0.org }).mapValues { values in
-                    Dictionary(uniqueKeysWithValues: values.map { ($0.id, Disclosure.Share(data: $0.share)) })
+                    Dictionary(uniqueKeysWithValues: values.compactMap {
+                        // Reject shares that have been manipulated by the server
+                        guard $0.verifiableShare.verify(id: $0.id, privateKey: privateKey) else { return nil }
+                        return ($0.id, $0.verifiableShare)
+                    })
                 })
             }.resume()
         }
@@ -187,20 +193,20 @@ struct RendezvousPoint {
     private struct DiscloseRequest: Encodable {
         let id: UUID
         let recipient: Data
-        let share: Data
+        let verifiableShare: Disclosure.VerifiableShare
     }
     
     func submitDisclosure(
         credential: Credential,
         recipient: Recipient,
         disclosureId: UUID,
-        share: Disclosure.Share,
+        verifiableShare: Disclosure.VerifiableShare,
         completionHandler: @escaping (Data?, URLResponse?, Error?) -> Void
     ) throws {
         let disclosureRequest = DiscloseRequest(
             id: disclosureId,
             recipient: recipient.publicKey.rawRepresentation,
-            share: share.data
+            verifiableShare: verifiableShare
         )
         let body = try JSONEncoder().encode(disclosureRequest)
         
@@ -305,7 +311,7 @@ extension Array where Element == RendezvousPoint {
     ) throws {
         let group = DispatchGroup()
         let syncQueue = DispatchQueue(label: "inbox.sync")
-        var allShares: [String: [UUID: [Disclosure.Share]]] = [:]
+        var allShares: [String: [UUID: [Disclosure.VerifiableShare]]] = [:]
         
         for rp in self {
             group.enter()
@@ -325,10 +331,10 @@ extension Array where Element == RendezvousPoint {
             var disclosures: [Disclosure] = []
             for (org, orgShares) in allShares {
                 for (id, shares) in orgShares {
-                    guard shares.count >= self.count else { continue }
+                    guard shares.count >= RendezvousPoint.recoveryThreshold else { continue }
                     do {
                         let encrypted = try Disclosure.Encrypted.reconstruct(from: shares)
-                        var disclosure = try encrypted.decrypt(using: privateKey)
+                        var disclosure = try encrypted.decrypt(using: privateKey, ephemeralKey: shares.first!.ephemeralKey)
                         disclosure.organization = org
                         disclosures.append(disclosure)
                         

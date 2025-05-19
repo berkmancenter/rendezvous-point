@@ -19,7 +19,7 @@ var (
 	challengesMu  sync.Mutex
 	challenges    = map[string]map[string]types.Challenge{} // publicKeyBase64 -> nonce -> Challenge
 	disclosuresMu sync.RWMutex
-	disclosures   = map[string]map[string]map[string]string{} // publicKeyBase64 -> org -> disclosureID -> share
+	disclosures   = map[string]map[string]map[string]types.VerifiableShare{} // publicKeyBase64 -> org -> disclosureID -> VerifiableShare
 	threshold     = 3
 )
 

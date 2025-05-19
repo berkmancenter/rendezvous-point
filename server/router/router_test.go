@@ -85,14 +85,16 @@ func TestInboxChallengeAndAccessFlow(t *testing.T) {
 	orgs := []string{"OrgA", "OrgB", "OrgC"}
 	for _, org := range orgs {
 		if disclosures[string(peerPublicKey[:])] == nil {
-			disclosures[string(peerPublicKey[:])] = make(map[string]map[string]string)
+			disclosures[string(peerPublicKey[:])] = make(map[string]map[string]types.VerifiableShare)
 		}
 		if disclosures[string(peerPublicKey[:])][org] == nil {
-			disclosures[string(peerPublicKey[:])][org] = make(map[string]string)
+			disclosures[string(peerPublicKey[:])][org] = make(map[string]types.VerifiableShare)
 		}
 		for i := 0; i < 3; i++ {
 			id := fmt.Sprintf("id-%s-%d", org, i)
-			share := fmt.Sprintf("share-%s-%d", org, i)
+			share := types.VerifiableShare{
+				Data: fmt.Sprintf("share-%s-%d", org, i),
+			}
 			disclosures[string(peerPublicKey[:])][org][id] = share
 		}
 	}
@@ -142,8 +144,8 @@ func TestInboxDelete(t *testing.T) {
 
 	// Step 2: Simulate a share
 	org := "TestOrg"
-	disclosures[string(peerPublicKey[:])] = map[string]map[string]string{
-		org: {shareID: "share-value"},
+	disclosures[string(peerPublicKey[:])] = map[string]map[string]types.VerifiableShare{
+		org: {shareID: types.VerifiableShare{Data: "share-value"}},
 	}
 
 	// Step 3: Encrypt token with shared key
