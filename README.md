@@ -2,6 +2,8 @@
 
 **⚠️ Proof of Concept – Not for Production Use**
 
+> This is a research prototype. It is **not audited** and **not ready for real-world whistleblowing**.
+
 Rendezvous is a privacy-preserving protocol and prototype for whistleblowing that ensures disclosures are only released when a **safety threshold** is met – meaning enough people from the same organization have independently come forward. It provides anonymity, security, and accountability through:
 
 - **IP-based organization verification**
@@ -109,7 +111,7 @@ Registers a recipient to receive disclosures.
 
 ```json
 {
-  "name": "Psst Legal Team",
+  "name": "Legal Team",
   "publicKey": "<base64 Curve25519 public key>"
 }
 ```
@@ -123,7 +125,7 @@ Returns a list of registered recipients.
 ```json
 [
   {
-    "name": "Psst Legal Team",
+    "name": "Legal Team",
     "publicKey": "<base64 Curve25519 public key>"
   },
   ...
